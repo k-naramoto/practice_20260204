@@ -1,5 +1,5 @@
 import sys
-import mysql.connector
+import pymysql
 import argparse
 import unicodedata
 from datetime import datetime
@@ -11,13 +11,14 @@ MYSQL_DATABASE = "task_management"
 # DB接続設定
 def get_connection():
     try:
-        return mysql.connector.connect(
+        return pymysql.connect(
             host="localhost",
             user=MYSQL_USERNAME,
             password=MYSQL_PASSWORD,
             database=MYSQL_DATABASE,
+            cursorclass=pymysql.cursors.DictCursor
         )
-    except mysql.connector.Error as e:
+    except pymysql.MySQLError as e:
         print_error(f"データベース接続に失敗しました: {e}")
         exit(1)
 
@@ -27,14 +28,13 @@ def print_error(msg):
 
 # 整形された一覧表を表示する
 def display_table(rows):
+    if not rows: return
     # 全角2、半角1として文字幅を計算する
     def get_width(text):
         return sum(2 if unicodedata.east_asian_width(c) in 'FWA' else 1 for c in str(text))
     # 指定の幅に揃えるためのパディングを追加する
     def pad(text, width):
         return str(text) + ' ' * (width - get_width(text))
-
-    if not rows: return
 
     cols = [
         (4, 'ID', 'id'),
@@ -87,14 +87,12 @@ def add_task():
 
     conn = get_connection()
     try:
-        with conn:
-            cursor = conn.cursor()
+        with conn.cursor() as cursor:
             sql = """
                 INSERT INTO tasks
                 (title, description, assignee, deadline, status)
                 VALUES (%s, %s, %s, %s, %s)
             """
-            print(title, desc, user, date, stat)
             cursor.execute(sql, (title, desc, user, date, stat))
             conn.commit()
         print("タスクを追加しました。")
@@ -107,18 +105,17 @@ def add_task():
 def list_tasks():
     conn = get_connection()
     try:
-        cursor = conn.cursor(dictionary=True)
-        search = input("検索キーワード: ").strip()
-        sql = (
-            "SELECT id, title, description, assignee, deadline, status "
-            "FROM tasks WHERE deleted_at IS NULL "
-            "AND (title LIKE %s OR description LIKE %s OR assignee LIKE %s OR status LIKE %s)"
-        )
-        val = f"%{search}%"
-        cursor.execute(sql, (val, val, val, val))
-            
-        rows = cursor.fetchall()
-        display_table(rows)
+        with conn.cursor() as cursor:
+            search = input("検索キーワード: ").strip()
+            sql = (
+                "SELECT id, title, description, assignee, deadline, status "
+                "FROM tasks WHERE deleted_at IS NULL "
+                "AND (title LIKE %s OR description LIKE %s OR assignee LIKE %s OR status LIKE %s)"
+            )
+            val = f"%{search}%"
+            cursor.execute(sql, (val, val, val, val))
+            rows = cursor.fetchall()
+            display_table(rows)
     finally:
         conn.close()
 
@@ -126,21 +123,20 @@ def list_tasks():
 def update_task():
     conn = get_connection()
     try:
-        cursor = conn.cursor(dictionary=True)
-        tid = input("更新するタスクのID: ")
-        task = get_task(cursor, tid)
-        if not task:
-            print_error(f"ID {tid} は存在しません。")
-            return
+        with conn.cursor() as cursor:
+            tid = input("更新するタスクのID: ")
+            task = get_task(cursor, tid)
+            if not task:
+                print_error(f"ID {tid} は存在しません。")
+                return
 
-        print("--- 更新情報の入力（変更しない項目は未入力でエンター） ---")
-        title = validate_input("● 新しいタスク名: ", required=False) or task['title']
-        desc = validate_input("● 新しい内容: ", required=False) or task['description']
-        user = validate_input("● 新しい担当者: ", required=False) or task['assignee']
-        date = validate_input("● 新しい期限 (YYYY-MM-DD): ", required=False, is_date=True) or task['deadline']
-        stat = validate_input("● 新しいステータス: ", required=False) or task['status']
+            print("--- 更新情報の入力（変更しない項目は未入力でエンター） ---")
+            title = validate_input("● 新しいタスク名: ", required=False) or task['title']
+            desc = validate_input("● 新しい内容: ", required=False) or task['description']
+            user = validate_input("● 新しい担当者: ", required=False) or task['assignee']
+            date = validate_input("● 新しい期限 (YYYY-MM-DD): ", required=False, is_date=True) or task['deadline']
+            stat = validate_input("● 新しいステータス: ", required=False) or task['status']
 
-        with conn:
             sql = """
                 UPDATE tasks
                 SET title=%s, description=%s, assignee=%s, deadline=%s, status=%s
@@ -158,20 +154,19 @@ def update_task():
 def delete_task():
     conn = get_connection()
     try:
-        cursor = conn.cursor(dictionary=True)
-        tid = input("削除するタスクのID: ")
-        if not get_task(cursor, tid):
-            print_error(f"ID {tid} は存在しません。")
-            return
+        with conn.cursor() as cursor:
+            tid = input("削除するタスクのID: ")
+            if not get_task(cursor, tid):
+                print_error(f"ID {tid} は存在しません。")
+                return
 
-        if input(f"ID:{tid} を削除しますか？(y/n): ").lower() == 'y':
-            with conn:
+            if input(f"ID:{tid} を削除しますか？(y/n): ").lower() == 'y':
                 cursor.execute(
                     "UPDATE tasks SET deleted_at = NOW() WHERE id = %s",
                     (tid,)
                 )
                 conn.commit()
-            print("タスクを削除しました。")
+                print("タスクを削除しました。")
     except Exception as e:
         print_error(f"削除失敗: {e}")
     finally:

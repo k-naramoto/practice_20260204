@@ -27,7 +27,7 @@ CREATE TABLE tasks (
 
 1. 依存ライブラリのインストール
 ```bash
-pip install mysql-connector-python
+pip install PyMySQL
 ```
 2. 各機能の実行
 
