@@ -108,13 +108,17 @@ def list_tasks():
     conn = get_connection()
     try:
         cursor = conn.cursor(dictionary=True)
-        cursor.execute(
+        search = input("検索キーワード: ").strip()
+        sql = (
             "SELECT id, title, description, assignee, deadline, status "
-            "FROM tasks WHERE deleted_at IS NULL"
+            "FROM tasks WHERE deleted_at IS NULL "
+            "AND (title LIKE %s OR description LIKE %s OR assignee LIKE %s OR status LIKE %s)"
         )
+        val = f"%{search}%"
+        cursor.execute(sql, (val, val, val, val))
+            
         rows = cursor.fetchall()
         display_table(rows)
-        print(f"全 {len(rows)} 件")
     finally:
         conn.close()
 
